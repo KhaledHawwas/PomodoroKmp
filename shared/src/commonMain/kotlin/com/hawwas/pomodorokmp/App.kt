@@ -25,6 +25,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
+import com.hawwas.pomodorokmp.ui.SessionIndicator
 import com.hawwas.pomodorokmp.ui.settings.SettingsDrawer
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
@@ -62,18 +63,25 @@ import com.hawwas.pomodorokmp.model.SurroundedTextTheme
 import com.hawwas.pomodorokmp.model.TimerTextTheme
 import com.hawwas.pomodorokmp.model.TimerShape
 import com.hawwas.pomodorokmp.model.ActionButtonTheme
-import kotlinx.coroutines.delay
+import kotlin.time.Clock
+
 import org.jetbrains.compose.resources.painterResource
 import pomodorokmp.shared.generated.resources.Res
+import pomodorokmp.shared.generated.resources.fullscreen_exit
+import pomodorokmp.shared.generated.resources.fullscreen_fill
 import pomodorokmp.shared.generated.resources.pause
 import pomodorokmp.shared.generated.resources.photo_prints
 import pomodorokmp.shared.generated.resources.play_arrow_fill
 import pomodorokmp.shared.generated.resources.refresh
+import pomodorokmp.shared.generated.resources.skip_next
 import kotlin.math.sqrt
-import kotlin.time.Duration.Companion.seconds
+
 
 @Composable
-fun App() {
+fun App(
+    isFullscreen: Boolean = false,
+    onToggleFullscreen: (() -> Unit)? = null
+) {
     MaterialTheme(
         colorScheme = darkColorScheme(
             primary = Color(0xFF6200EE),
@@ -82,7 +90,7 @@ fun App() {
         )
     ) {
 
-        Background({ Content(it) })
+        Background({ Content(isFullscreen,onToggleFullscreen,it) })
     }
 }
 
@@ -106,12 +114,15 @@ data class AppTheme constructor(
         resetContentColor = Color.White,
         contentColor = Color.White
     ),
-    val name:String?= null
+    val name: String? = null,
+    val isDark: Boolean=false ,
 )
-var i by mutableStateOf(0)
+
+private val repo = TimerRepository(clock = Clock.System)
+var i by mutableStateOf(repo.themeIndex)
 
 var appTheme by mutableStateOf(
-     AppThemePresets.all[i]
+    AppThemePresets.all[i.coerceIn(AppThemePresets.all.indices)]
 )
 
 
@@ -159,27 +170,30 @@ private fun BackgroundThemeContent(
             MovingStarsBackground(modifier = Modifier.fillMaxSize(), background = theme.color)
             Light(startY = 0f, modifier = Modifier.fillMaxSize(), halfTubeWidth = .3f)
         }
+
         is BackgroundTheme.RepeatedRectangle -> Box(modifier) {
             RoundedRectGridBackground(
-                baseColor=theme.baseColor,
-                        glowColor=theme.glowColor,
-                        backgroundColor=theme.backgroundColor,
-                        cellWidth=theme.cellWidth,
-                        cellHeight=theme.cellHeight,
-                        rectWidth=theme.rectWidth,
-                        rectHeight=theme.rectHeight,
-                        cornerRadius=theme.cornerRadius,
-                        glowRadius=theme.glowRadius,
-                        dotCount=theme.dotCount,
-                        directionDegrees=theme.directionDegrees,
+                baseColor = theme.baseColor,
+                glowColor = theme.glowColor,
+                backgroundColor = theme.backgroundColor,
+                cellWidth = theme.cellWidth,
+                cellHeight = theme.cellHeight,
+                rectWidth = theme.rectWidth,
+                rectHeight = theme.rectHeight,
+                cornerRadius = theme.cornerRadius,
+                glowRadius = theme.glowRadius,
+                dotCount = theme.dotCount,
+                directionDegrees = theme.directionDegrees,
             )
         }
-        is BackgroundTheme.Hexagon->{
-            HexagonBackground(modifier= Modifier.fillMaxSize(),
-                backgroundColor= theme.backgroundColor,
+
+        is BackgroundTheme.Hexagon -> {
+            HexagonBackground(
+                modifier = Modifier.fillMaxSize(),
+                backgroundColor = theme.backgroundColor,
                 hexRadius = theme.hexRadius,
-                borderColor= theme.borderColor,
-                strokeWidth= theme.strokeWidth
+                borderColor = theme.borderColor,
+                strokeWidth = theme.strokeWidth
             )
         }
     }
@@ -188,7 +202,8 @@ private fun BackgroundThemeContent(
 
 @OptIn(ExperimentalAnimationApi::class)
 @Composable
- fun Background(content: @Composable (appTheme: AppTheme) -> Unit) {
+fun Background(
+                 content: @Composable (appTheme: AppTheme) -> Unit) {
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -236,14 +251,14 @@ private fun BackgroundThemeContent(
                         Modifier
                     }
 
-                        Box(
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .then(clipModifier)
-                        ) {
-                            BackgroundThemeContent(theme.backgroundTheme)
-                            content(theme)
-                        }
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .then(clipModifier)
+                    ) {
+                        BackgroundThemeContent(theme.backgroundTheme)
+                        content(theme)
+                    }
                 }
             }
         }
@@ -275,25 +290,29 @@ class CirclePath(private val progress: Float, private val origin: Offset = Offse
 }
 
 @Composable
-private fun Content(currentTheme: AppTheme) {
+private fun Content(isFullscreen: Boolean = false,
+
+                    onToggleFullscreen: (() -> Unit)? = null,currentTheme: AppTheme) {
 
     val timerRepository = remember { TimerRepository(clock = kotlin.time.Clock.System) }
 
-    var timerState by remember { mutableStateOf(timerRepository.loadTimerState()) }
+    val timeLeft = TimerEngine.timeLeft
+    val isRunning = TimerEngine.isRunning
+    val mode = TimerEngine.mode
+    val completedSessions = TimerEngine.completedSessions
     var isSettingsOpen by remember { mutableStateOf(false) }
 
-    LaunchedEffect(timerState) {
-        timerRepository.saveTimerState(timerState)
+    val textColor = when (val textTheme = currentTheme.timerTextTheme) {
+        is TimerTextTheme.Solid -> textTheme.color
     }
-    
-    LaunchedEffect(timerState.isRunning) {
-        if (timerState.isRunning) {
-            while (timerState.timeLeft > 0) {
-                delay(1.seconds)
-                timerState = timerState.copy(timeLeft = timerState.timeLeft - 1)
-            }
-            timerState = timerRepository.nextState(timerState)
-        }
+    val containerColor = if(currentTheme.isDark) Color.White else Color.Black
+    val contentColor = if (currentTheme.isDark) Color.Black else Color.White
+    val pausedColor = Color.Yellow
+
+    val modeLabel = when (mode) {
+        TimerMode.FOCUS -> "Focus"
+        TimerMode.SHORT_BREAK -> "Short Break"
+        TimerMode.LONG_BREAK -> "Long Break"
     }
 
     Box(modifier = Modifier.fillMaxSize()) {
@@ -302,203 +321,130 @@ private fun Content(currentTheme: AppTheme) {
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center
         ) {
-        currentTheme.name?.let { name ->
+            currentTheme.name?.let { name ->
+                Text(
+                    text = name,
+                    style = MaterialTheme.typography.titleMedium,
+                    color = textColor.copy(alpha = 0.8f),
+                    modifier = Modifier.padding(bottom = 32.dp)
+                )
+            }
+
+            // Mode label
             Text(
-                text = name,
-                style = MaterialTheme.typography.titleMedium,
-                color = when (val textTheme = currentTheme.timerTextTheme) {
-                    is TimerTextTheme.Solid -> textTheme.color
-                }.copy(alpha = 0.7f),
-                modifier = Modifier.padding(bottom = 32.dp)
-            )
-        }
-
-
-        Box(contentAlignment = Alignment.Center) {
-            when (val theme = currentTheme.surroundedTextTheme) {
-                is SurroundedTextTheme.MovingTextTheme -> {
-                    SurroundingText(theme)
-
-                }
-
-                SurroundedTextTheme.None -> {}
-            }
-            TimerRing(
-                timeLeft = timerState.timeLeft,
-                timerShape = currentTheme.timeShape,
-                timerTextTheme = currentTheme.timerTextTheme,
-                totalTime = timerRepository.getDurationForMode(timerState.mode),
-                modifier = Modifier.width(280.dp).height(280.dp)
+                text = modeLabel,
+                style = MaterialTheme.typography.titleLarge,
+                color = textColor.copy(alpha = 0.9f),
             )
 
+
+            Spacer(modifier = Modifier.height(24.dp))
+
+            Box(contentAlignment = Alignment.Center) {
+                when (val theme = currentTheme.surroundedTextTheme) {
+                    is SurroundedTextTheme.MovingTextTheme -> {
+                        SurroundingText(theme)
+
+                    }
+
+                    SurroundedTextTheme.None -> {}
+                }
+                TimerRing(
+                    timeLeft = timeLeft,
+                    timerShape = currentTheme.timeShape,
+                    timerTextTheme = currentTheme.timerTextTheme,
+                    totalTime = timerRepository.getDurationForMode(mode),
+                    modifier = Modifier.width(280.dp).height(280.dp)
+                )
+
+            }
+            Spacer(modifier = Modifier.height(24.dp))
+
+            SessionIndicator(
+                completedSessions = completedSessions,
+                totalSessions = timerRepository.longBreakInterval,
+                mode = mode,
+                activeColor = Color.Green.copy(alpha = 0.6f),
+                inactiveColor = textColor.copy(alpha = 0.8f)
+            )
+
+            Spacer(modifier = Modifier.height(24.dp))
+
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(20.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                FilledIconButton(
+                    onClick = { TimerEngine.reset() },
+                    colors = IconButtonDefaults.filledIconButtonColors(
+                        containerColor = containerColor,
+                        contentColor =contentColor
+                    ),
+                    modifier = Modifier.size(48.dp)
+                ) {
+                    Icon(
+                        painter = painterResource(Res.drawable.refresh),
+                        contentDescription = "Reset"
+                    )
+                }
+
+                FilledIconButton(
+                    onClick = { if (isRunning) TimerEngine.pause() else TimerEngine.start() },
+                    colors = IconButtonDefaults.filledIconButtonColors(
+                        containerColor = if (!isRunning) containerColor else pausedColor,
+                        contentColor =  contentColor
+                    ),
+                    modifier = Modifier.size(56.dp)
+                ) {
+                    Icon(
+                        painter = painterResource(
+                            if (isRunning) Res.drawable.pause else Res.drawable.play_arrow_fill
+                        ),
+                        contentDescription = if (isRunning) "Stop" else "Start"
+                    )
+                }
+
+                FilledIconButton(
+                    onClick = { TimerEngine.skip() },
+                    colors = IconButtonDefaults.filledIconButtonColors(
+                        containerColor = containerColor,
+                        contentColor =contentColor
+                    ),
+                    modifier = Modifier.size(48.dp)
+                ) {
+                    Icon(
+                        painter = painterResource(Res.drawable.skip_next),
+                        contentDescription = "Skip Next"
+                    )
+                }
+            }
         }
 
-        Spacer(modifier = Modifier.height(48.dp))
-
-        when (val actionButtonTheme = currentTheme.actionButtonTheme) {
-           is  ActionButtonTheme.Solid -> {
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(16.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Button(
-                        onClick = { timerState = timerState.copy(isRunning = !timerState.isRunning) },
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = if (timerState.isRunning) actionButtonTheme.stopContainerColor else actionButtonTheme.startContainerColor,
-                            contentColor = if (timerState.isRunning) actionButtonTheme.stopContentColor else actionButtonTheme.startContentColor
-                        )
-                    ) {
-                        Text(if (timerState.isRunning) "Stop" else "Start")
-                    }
 
 
-                    Shaker(text = "Shake Me", borderColor = actionButtonTheme.resetContentColor, color = actionButtonTheme.contentColor) {
-                        increment()
-                    }
-                    OutlinedButton(
-                        onClick = {
-                            timerState = timerState.copy(
-                                isRunning = false,
-                                timeLeft = timerRepository.getDurationForMode(timerState.mode)
-                            )
-                        },
-                        colors = ButtonDefaults.outlinedButtonColors(
-                            contentColor = actionButtonTheme.resetContentColor
-                        )
-                    ) {
-                        Text("Reset")
-                    }
-                }
-            }
-            is ActionButtonTheme.Gradient -> {
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(16.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(50))
-                            .background(if (timerState.isRunning) actionButtonTheme.stopGradient else actionButtonTheme.startGradient)
-                            .clickable { timerState = timerState.copy(isRunning = !timerState.isRunning) }
-                            .padding(horizontal = 24.dp, vertical = 12.dp)
-                    ) {
-                        Text(
-                            text = if (timerState.isRunning) "Stop" else "Start",
-                            color = actionButtonTheme.contentColor
-                        )
-                    }
-
-                    Shaker(text = "Shake Me", borderColor = actionButtonTheme.resetContentColor, color = actionButtonTheme.contentColor) {
-                        increment()
-                    }
-
-                    OutlinedButton(
-                        onClick = { 
-                            timerState = timerState.copy(
-                                isRunning = false,
-                                timeLeft = timerRepository.getDurationForMode(timerState.mode)
-                            )
-                        },
-                        colors = ButtonDefaults.outlinedButtonColors(
-                            contentColor = actionButtonTheme.resetContentColor
-                        )
-                    ) {
-                        Text("Reset")
-                    }
-                }
-            }
-            is ActionButtonTheme.IconOnly -> {
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(20.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    FilledIconButton(
-                        onClick = { timerState = timerState.copy(isRunning = !timerState.isRunning) },
-                        colors = IconButtonDefaults.filledIconButtonColors(
-                            containerColor = if (timerState.isRunning) actionButtonTheme.stopContainerColor else actionButtonTheme.startContainerColor,
-                            contentColor = if (timerState.isRunning) actionButtonTheme.stopContentColor else actionButtonTheme.startContentColor
-                        ),
-                        modifier = Modifier.size(56.dp)
-                    ) {
-                        Icon(
-                            painter = painterResource(
-                                if (timerState.isRunning) Res.drawable.pause else Res.drawable.play_arrow_fill
-                            ),
-                            contentDescription = if (timerState.isRunning) "Stop" else "Start"
-                        )
-                    }
-
-                    Shaker( borderColor = actionButtonTheme.resetContentColor,icon =painterResource(Res.drawable.photo_prints), color = actionButtonTheme.contentColor) {
-                        increment()
-                    }
-
-                    IconButton(
-                        onClick = { 
-                            timerState = timerState.copy(
-                                isRunning = false,
-                                timeLeft = timerRepository.getDurationForMode(timerState.mode)
-                            )
-                        }
-                    ) {
-                        Icon(
-                            painter = painterResource(Res.drawable.refresh),
-                            contentDescription = "Reset",
-                            tint = actionButtonTheme.resetContentColor
-                        )
-                    }
-                }
-            }
-            is ActionButtonTheme.Outlined -> {
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(16.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    OutlinedButton(
-                        onClick = { timerState = timerState.copy(isRunning = !timerState.isRunning) },
-                        border = BorderStroke(
-                            1.5.dp,
-                            if (timerState.isRunning) actionButtonTheme.stopBorderColor else actionButtonTheme.startBorderColor
-                        ),
-                        colors = ButtonDefaults.outlinedButtonColors(
-                            contentColor = if (timerState.isRunning) actionButtonTheme.stopContentColor else actionButtonTheme.startContentColor
-                        )
-                    ) {
-                        Text(if (timerState.isRunning) "Stop" else "Start")
-                    }
-
-                    Shaker(text = "Shake Me", color = actionButtonTheme.contentColor) {
-                        increment()
-                    }
-
-                    TextButton(
-                        onClick = { 
-                            timerState = timerState.copy(
-                                isRunning = false,
-                                timeLeft = timerRepository.getDurationForMode(timerState.mode)
-                            )
-                        },
-                        colors = ButtonDefaults.textButtonColors(
-                            contentColor = actionButtonTheme.resetContentColor
-                        )
-                    ) {
-                        Text("Reset")
-                    }
-                }
-            }
-
-            }
-        }
 
         TextButton(
             onClick = { isSettingsOpen = true },
-            modifier = Modifier.align(Alignment.TopEnd).padding(16.dp).safeContentPadding()
+            modifier = Modifier.align(Alignment.TopEnd).padding(end = 4.dp).safeContentPadding()
         ) {
             Text(
                 text = "Settings",
                 color = when (val textTheme = currentTheme.timerTextTheme) {
                     is TimerTextTheme.Solid -> textTheme.color
-                }.copy(alpha = 0.7f)
+                }.copy(alpha = 0.8f)
             )
+        }
+        if (onToggleFullscreen != null) {
+            IconButton(onClick = onToggleFullscreen) {
+                Icon(
+                    painter = painterResource(
+                        if (isFullscreen) Res.drawable.fullscreen_exit else Res.drawable.fullscreen_fill
+                    ),
+                    tint = containerColor,
+                    contentDescription = if (isFullscreen) "Exit Fullscreen" else "Fullscreen",
+
+                )
+            }
         }
 
         if (isSettingsOpen) {
@@ -506,13 +452,13 @@ private fun Content(currentTheme: AppTheme) {
                 detectTapGestures(onTap = { isSettingsOpen = false })
             })
         }
-        
+
         SettingsDrawer(
             isOpen = isSettingsOpen,
             timerRepository = timerRepository,
             onSettingsChanged = {
-                if (!timerState.isRunning) {
-                    timerState = timerState.copy(timeLeft = timerRepository.getDurationForMode(timerState.mode))
+                if (!isRunning) {
+                    TimerEngine.reset()
                 }
             },
             modifier = Modifier.align(Alignment.CenterEnd)
@@ -523,6 +469,7 @@ private fun Content(currentTheme: AppTheme) {
 private fun increment(offset: Offset = Offset.Unspecified) {
     i++
     i %= (AppThemePresets.all.size)
+    repo.themeIndex = i
     setAppTheme(AppThemePresets.all[i], offset)
 }
 

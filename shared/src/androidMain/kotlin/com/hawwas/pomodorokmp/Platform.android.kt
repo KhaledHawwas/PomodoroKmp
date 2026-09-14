@@ -7,3 +7,6 @@ class AndroidPlatform : Platform {
 }
 
 actual fun getPlatform(): Platform = AndroidPlatform()
+
+actual fun isMeshGradientSupported(): Boolean =
+    Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q

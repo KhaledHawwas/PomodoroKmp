@@ -34,6 +34,15 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.hawwas.pomodorokmp.TimerRepository
 
+private object SettingsLimits {
+    const val MIN_DURATION_MINUTES = 1
+    const val MAX_FOCUS_MINUTES = 60
+    const val MAX_SHORT_BREAK_MINUTES = 30
+    const val MAX_LONG_BREAK_MINUTES = 60
+    const val MIN_INTERVAL = 1
+    const val MAX_INTERVAL = 12
+}
+
 @Composable
 fun SettingsDrawer(
     isOpen: Boolean,
@@ -63,9 +72,30 @@ fun SettingsDrawer(
                 modifier = Modifier.padding(bottom = 32.dp)
             )
 
-            var focusDuration by remember { mutableStateOf(timerRepository.focusDuration / 60) }
-            var shortBreakDuration by remember { mutableStateOf(timerRepository.shortBreakDuration / 60) }
-            var longBreakDuration by remember { mutableStateOf(timerRepository.longBreakDuration / 60) }
+            var focusDuration by remember {
+                mutableStateOf(
+                    (timerRepository.focusDuration / 60)
+                        .coerceIn(SettingsLimits.MIN_DURATION_MINUTES, SettingsLimits.MAX_FOCUS_MINUTES)
+                )
+            }
+            var shortBreakDuration by remember {
+                mutableStateOf(
+                    (timerRepository.shortBreakDuration / 60)
+                        .coerceIn(SettingsLimits.MIN_DURATION_MINUTES, SettingsLimits.MAX_SHORT_BREAK_MINUTES)
+                )
+            }
+            var longBreakDuration by remember {
+                mutableStateOf(
+                    (timerRepository.longBreakDuration / 60)
+                        .coerceIn(SettingsLimits.MIN_DURATION_MINUTES, SettingsLimits.MAX_LONG_BREAK_MINUTES)
+                )
+            }
+            var longBreakInterval by remember {
+                mutableStateOf(
+                    timerRepository.longBreakInterval
+                        .coerceIn(SettingsLimits.MIN_INTERVAL, SettingsLimits.MAX_INTERVAL)
+                )
+            }
 
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -74,7 +104,9 @@ fun SettingsDrawer(
                 DurationCard(
                     label = "POMODORO",
                     value = focusDuration,
-                    onValueChange = { 
+                    minValue = SettingsLimits.MIN_DURATION_MINUTES,
+                    maxValue = SettingsLimits.MAX_FOCUS_MINUTES,
+                    onValueChange = {
                         focusDuration = it
                         timerRepository.focusDuration = it * 60
                         onSettingsChanged()
@@ -85,7 +117,9 @@ fun SettingsDrawer(
                 DurationCard(
                     label = "BREAK",
                     value = shortBreakDuration,
-                    onValueChange = { 
+                    minValue = SettingsLimits.MIN_DURATION_MINUTES,
+                    maxValue = SettingsLimits.MAX_SHORT_BREAK_MINUTES,
+                    onValueChange = {
                         shortBreakDuration = it
                         timerRepository.shortBreakDuration = it * 60
                         onSettingsChanged()
@@ -96,7 +130,9 @@ fun SettingsDrawer(
                 DurationCard(
                     label = "LONG BREAK",
                     value = longBreakDuration,
-                    onValueChange = { 
+                    minValue = SettingsLimits.MIN_DURATION_MINUTES,
+                    maxValue = SettingsLimits.MAX_LONG_BREAK_MINUTES,
+                    onValueChange = {
                         longBreakDuration = it
                         timerRepository.longBreakDuration = it * 60
                         onSettingsChanged()
@@ -104,6 +140,29 @@ fun SettingsDrawer(
                     modifier = Modifier.weight(1f)
                 )
             }
+
+            Spacer(modifier = Modifier.height(32.dp))
+
+            Text(
+                text = "CYCLES",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Light,
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
+                modifier = Modifier.padding(bottom = 16.dp)
+            )
+
+            DurationCard(
+                label = "INTERVAL",
+                value = longBreakInterval,
+                minValue = SettingsLimits.MIN_INTERVAL,
+                maxValue = SettingsLimits.MAX_INTERVAL,
+                onValueChange = {
+                    longBreakInterval = it
+                    timerRepository.longBreakInterval = it
+                    onSettingsChanged()
+                },
+                modifier = Modifier.width(120.dp)
+            )
         }
     }
 }
@@ -113,16 +172,21 @@ fun DurationCard(
     label: String,
     value: Int,
     onValueChange: (Int) -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    minValue: Int = 1,
+    maxValue: Int = 99,
 ) {
     var textValue by remember(value) { mutableStateOf(value.toString()) }
+    val maxDigits = maxValue.toString().length
+    val isInvalid = textValue.isEmpty() ||
+        textValue.toIntOrNull()?.let { it !in minValue..maxValue } == true
 
     Box(
         modifier = modifier
-            .aspectRatio(0.85f)
+            .aspectRatio(0.95f)
             .clip(RoundedCornerShape(8.dp))
             .background(MaterialTheme.colorScheme.surfaceVariant)
-            .padding(12.dp),
+            .padding(4.dp),
         contentAlignment = Alignment.Center
     ) {
         Column(
@@ -131,23 +195,37 @@ fun DurationCard(
         ) {
             BasicTextField(
                 value = textValue,
-                onValueChange = {
-                    textValue = it
-                    val intValue = it.toIntOrNull()
-                    if (intValue != null && intValue > 0) {
+                onValueChange = { newText ->
+                    if (newText.isEmpty()) {
+                        textValue = newText
+                        return@BasicTextField
+                    }
+                    if (newText.any { !it.isDigit() }) return@BasicTextField
+                    if (newText.length > maxDigits) return@BasicTextField
+                    // Reject leading zeros (e.g. "01") while still allowing a temporary "0".
+                    if (newText.length > 1 && newText.startsWith('0')) return@BasicTextField
+
+                    textValue = newText
+                    val intValue = newText.toIntOrNull() ?: return@BasicTextField
+                    if (intValue in minValue..maxValue) {
                         onValueChange(intValue)
                     }
                 },
                 textStyle = MaterialTheme.typography.displaySmall.copy(
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    color = if (isInvalid) {
+                        MaterialTheme.colorScheme.error
+                    } else {
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    },
                     textAlign = TextAlign.Center
                 ),
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                singleLine = true,
                 modifier = Modifier.fillMaxWidth()
             )
-            
+
             Spacer(modifier = Modifier.height(8.dp))
-            
+
             Text(
                 text = label,
                 style = MaterialTheme.typography.labelSmall,

@@ -29,6 +29,7 @@ class TimerRepository(
         const val KEY_SHORT_BREAK_DURATION = "short_break_duration"
         const val KEY_LONG_BREAK_DURATION = "long_break_duration"
         const val KEY_LONG_BREAK_INTERVAL = "long_break_interval"
+        const val KEY_THEME_INDEX = "theme_index"
 
         const val DEFAULT_FOCUS = 25 * 60
         const val DEFAULT_SHORT_BREAK = 5 * 60
@@ -51,6 +52,10 @@ class TimerRepository(
     var longBreakInterval: Int
         get() = settings.getInt(KEY_LONG_BREAK_INTERVAL, DEFAULT_INTERVAL)
         set(value) = settings.putInt(KEY_LONG_BREAK_INTERVAL, value)
+
+    var themeIndex: Int
+        get() = settings.getInt(KEY_THEME_INDEX, 0)
+        set(value) = settings.putInt(KEY_THEME_INDEX, value)
 
     fun saveTimerState(state: TimerState) {
         settings.putBoolean(KEY_IS_RUNNING, state.isRunning)
@@ -128,7 +133,11 @@ class TimerRepository(
         }
     }
 
-    fun clear() {
-        settings.clear()
+    fun clearTimerState() {
+        settings.remove(KEY_TIME_LEFT)
+        settings.remove(KEY_IS_RUNNING)
+        settings.remove(KEY_END_TIME_UNIX)
+        settings.remove(KEY_MODE)
+        settings.remove(KEY_COMPLETED_SESSIONS)
     }
 }

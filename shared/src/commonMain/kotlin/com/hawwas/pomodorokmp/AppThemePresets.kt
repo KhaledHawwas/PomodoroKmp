@@ -58,6 +58,7 @@ object AppThemePresets {
                 emptyBarColor = emptyBarColor
             ),
             actionButtonTheme = actionButtonTheme,
+            isDark=isDark,
             name = name
         )
     }
@@ -99,7 +100,7 @@ object AppThemePresets {
     // ---------- Mesh ----------
     val meshAurora = createAppTheme(BackgroundThemePresets.meshAurora, isDark = true, name = "Aurora Borealis")
     val meshCandy = createAppTheme(BackgroundThemePresets.mesh2, isDark = false, name = "Candy Mesh")
-    val mesh3 = createAppTheme(BackgroundThemePresets.mesh3, isDark = false, name = "Candy Mesh")
+    val mesh3 = createAppTheme(BackgroundThemePresets.mesh3, isDark = false, name = "Flower Mesh")
 
     val meshes = listOf(meshAurora, meshCandy, mesh3)
 
@@ -109,6 +110,7 @@ object AppThemePresets {
 
 
     // ---------- Everything, for a picker/gallery screen ----------
-    val all: List<AppTheme> =
-        solids + solidStrokes + arrowSolidStrokes + starSkies + waves + meshes +rect+hex
+    val all: List<AppTheme>
+        get() = (solids + solidStrokes + arrowSolidStrokes + starSkies + waves + meshes + rect + hex)
+            .filter { it.backgroundTheme !is BackgroundTheme.Mesh || isMeshGradientSupported() }
 }
