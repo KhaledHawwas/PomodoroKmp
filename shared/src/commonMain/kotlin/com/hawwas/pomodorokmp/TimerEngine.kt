@@ -60,6 +60,7 @@ object TimerEngine {
             while (isActive) {
                 timeLeft = (endTimeUnix - clock.now().epochSeconds).toInt().coerceAtLeast(0)
                 if (timeLeft <= 0) {
+                    playBeepSound()
                     advance()
                     break
                 }

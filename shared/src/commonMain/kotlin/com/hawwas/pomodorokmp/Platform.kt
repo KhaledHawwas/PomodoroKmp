@@ -7,3 +7,5 @@ interface Platform {
 expect fun getPlatform(): Platform
 
 expect fun isMeshGradientSupported(): Boolean
+
+expect fun playBeepSound()
